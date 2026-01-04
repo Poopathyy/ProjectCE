@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 @st.cache_data
 def load_data():
     rooms = pd.read_csv("classrooms.csv")
-    exams = pd.read_csv("exam_timeslot.csv")
+    exams = pd.read_csv("exam_timeslot_dataset.csv")
     return rooms, exams
 
 rooms_df, exams_df = load_data()
@@ -17,44 +17,31 @@ NUM_EXAMS = len(exams_df)
 ROOM_IDS = rooms_df["classroom_id"].tolist()
 
 # -----------------------------
-# Fitness Function with Detailed Penalty Breakdown
+# Multi-Objective Fitness Function
 # -----------------------------
-def fitness_function(chromosome):
-    penalties = {
-        "capacity_violation": 0,
-        "room_type_mismatch": 0,
-        "high_utilization": 0,
-        "room_time_clash": 0
-    }
+def fitness_function_multi(chromosome):
+    hard_penalty = 0  # capacity + room-time clash
+    soft_penalty = 0  # room type mismatch + high utilization
 
     # Exam-room penalties
     for i, exam in exams_df.iterrows():
         room = rooms_df[rooms_df["classroom_id"] == chromosome[i]].iloc[0]
 
-        # Capacity violation
+        # Hard constraints
         if exam["num_students"] > room["capacity"]:
-            penalties["capacity_violation"] += (exam["num_students"] - room["capacity"]) * 10
+            hard_penalty += (exam["num_students"] - room["capacity"]) * 10
 
-        # Room type mismatch
-        if exam["exam_type"] == "Practical" and room["room_type"] != "Lab":
-            penalties["room_type_mismatch"] += 5
-
-        # High utilization
-        if exam["num_students"] > 0.8 * room["capacity"]:
-            penalties["high_utilization"] += 3
-
-    # Room-time clash penalty
-    for i in range(NUM_EXAMS):
         for j in range(i + 1, NUM_EXAMS):
-            if (
-                chromosome[i] == chromosome[j]
-                and exams_df.iloc[i]["exam_day"] == exams_df.iloc[j]["exam_day"]
-                and exams_df.iloc[i]["exam_time"] == exams_df.iloc[j]["exam_time"]
-            ):
-                penalties["room_time_clash"] += 50
+            if chromosome[i] == chromosome[j] and exams_df.iloc[i]["exam_day"] == exams_df.iloc[j]["exam_day"] and exams_df.iloc[i]["exam_time"] == exams_df.iloc[j]["exam_time"]:
+                hard_penalty += 50
 
-    total_penalty = sum(penalties.values())
-    return total_penalty, penalties
+        # Soft constraints
+        if exam["exam_type"] == "Practical" and room["room_type"] != "Lab":
+            soft_penalty += 5
+        if exam["num_students"] > 0.8 * room["capacity"]:
+            soft_penalty += 3
+
+    return [hard_penalty, soft_penalty]
 
 # -----------------------------
 # GA Components
@@ -72,53 +59,53 @@ def mutate(individual, mutation_rate):
             individual[i] = random.choice(ROOM_IDS)
     return individual
 
-def tournament_selection(population, fitnesses, k=3):
+def pareto_selection(population, fitnesses, k=3):
+    """Tournament selection based on Pareto dominance."""
     selected = random.sample(list(zip(population, fitnesses)), k)
-    return min(selected, key=lambda x: x[1])[0]
+    # Sort by non-domination: lower hard_penalty is prioritized
+    return min(selected, key=lambda x: (x[1][0], x[1][1]))[0]
 
 # -----------------------------
-# GA Execution
+# Multi-Objective GA Execution
 # -----------------------------
-def run_ga(pop_size, generations, mutation_rate):
+def run_moga(pop_size, generations, mutation_rate):
     population = [create_individual() for _ in range(pop_size)]
-    best_fitness_history = []
-    best_individual_overall = None
-    best_penalties_overall = None
-    best_fitness_overall = float('inf')
+    pareto_front = []
 
     for gen in range(generations):
-        fitnesses = []
-        penalties_list = []
-        for ind in population:
-            total, penalties = fitness_function(ind)
-            fitnesses.append(total)
-            penalties_list.append(penalties)
+        fitnesses = [fitness_function_multi(ind) for ind in population]
 
-        min_fitness = min(fitnesses)
-        best_fitness_history.append(min_fitness)
+        # Build Pareto front
+        pareto_front_gen = []
+        for i, fit_i in enumerate(fitnesses):
+            dominated = False
+            for j, fit_j in enumerate(fitnesses):
+                if j != i:
+                    # j dominates i if all objectives are <= and at least one is <
+                    if all(fj <= fi for fi, fj in zip(fit_i, fit_j)) and any(fj < fi for fi, fj in zip(fit_i, fit_j)):
+                        dominated = True
+                        break
+            if not dominated:
+                pareto_front_gen.append((population[i], fit_i))
+        pareto_front = pareto_front_gen  # update Pareto front
 
-        # Track overall best
-        if min_fitness < best_fitness_overall:
-            best_fitness_overall = min_fitness
-            best_individual_overall = population[fitnesses.index(min_fitness)]
-            best_penalties_overall = penalties_list[fitnesses.index(min_fitness)]
-
+        # Create next generation
         new_population = []
         for _ in range(pop_size):
-            parent1 = tournament_selection(population, fitnesses)
-            parent2 = tournament_selection(population, fitnesses)
+            parent1 = pareto_selection(population, fitnesses)
+            parent2 = pareto_selection(population, fitnesses)
             child = crossover(parent1, parent2)
             child = mutate(child, mutation_rate)
             new_population.append(child)
         population = new_population
 
-    return best_individual_overall, best_fitness_history, best_penalties_overall
+    return pareto_front
 
 # -----------------------------
 # Streamlit UI
 # -----------------------------
-st.set_page_config(page_title="Exam Scheduling GA", layout="wide")
-st.title("📅 University Exam Scheduling using Genetic Algorithm")
+st.set_page_config(page_title="Multi-Objective Exam Scheduling GA", layout="wide")
+st.title("📅 Multi-Objective University Exam Scheduling (GA)")
 
 # Sidebar - GA parameters
 st.sidebar.header("GA Parameters")
@@ -126,65 +113,54 @@ population_size = st.sidebar.slider("Population Size", 20, 200, 80)
 generations = st.sidebar.slider("Generations", 50, 500, 200)
 mutation_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1)
 
-if st.sidebar.button("Run Genetic Algorithm"):
+if st.sidebar.button("Run Multi-Objective GA"):
     with st.spinner("Optimizing exam schedule..."):
-        best_solution, fitness_history, penalty_breakdown = run_ga(
-            population_size, generations, mutation_rate
-        )
+        pareto_front = run_moga(population_size, generations, mutation_rate)
 
     st.success("Optimization Completed!")
 
     # -----------------------------
-    # Fitness Convergence Plot
+    # Pareto Front Plot
     # -----------------------------
-    st.subheader("📉 Fitness Convergence")
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(fitness_history, color='blue', marker='o', markersize=3)
-    ax.set_xlabel("Generation")
-    ax.set_ylabel("Total Penalty")
-    ax.set_title("GA Fitness Convergence")
+    st.subheader("📊 Pareto Front (Hard vs Soft Penalties)")
+    hard_penalties = [pf[1][0] for pf in pareto_front]
+    soft_penalties = [pf[1][1] for pf in pareto_front]
+
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.scatter(hard_penalties, soft_penalties, color='red')
+    ax.set_xlabel("Hard Constraint Penalty")
+    ax.set_ylabel("Soft Constraint Penalty")
+    ax.set_title("Pareto Front: Trade-off Between Objectives")
     st.pyplot(fig)
 
     # -----------------------------
-    # Final Exam Timetable
+    # Display Example Schedule from Pareto Front
     # -----------------------------
-    st.subheader("🗓️ Final Exam Timetable")
+    st.subheader("🗓️ Example Exam Timetable from Pareto Front")
+    # Select the solution with minimum hard penalty
+    best_solution = min(pareto_front, key=lambda x: x[1][0])[0]
     timetable = exams_df.copy()
     timetable["room_id"] = best_solution
-
     timetable = timetable.merge(
         rooms_df[["classroom_id", "building_name", "room_number", "room_type", "capacity"]],
         left_on="room_id",
         right_on="classroom_id",
         how="left"
     )
-
     st.dataframe(
         timetable[
-            [
-                "course_code", "exam_type", "num_students",
-                "exam_day", "exam_time", "building_name",
-                "room_number", "room_type", "capacity"
-            ]
+            ["course_code", "exam_type", "num_students", "exam_day", "exam_time",
+             "building_name", "room_number", "room_type", "capacity"]
         ]
     )
-
-    # -----------------------------
-    # Total Penalty & Breakdown
-    # -----------------------------
-    st.subheader("✅ Best Fitness Score with Detailed Penalties")
-    st.metric(label="Total Penalty", value=sum(penalty_breakdown.values()))
-
-    st.markdown("**Breakdown by Constraint:**")
-    st.write(penalty_breakdown)
 
     # -----------------------------
     # Download Button
     # -----------------------------
     st.download_button(
-        label="Download Timetable as CSV",
+        label="Download Example Timetable as CSV",
         data=timetable.to_csv(index=False),
-        file_name='exam_timetable.csv',
+        file_name='pareto_exam_timetable.csv',
         mime='text/csv'
     )
 
@@ -192,5 +168,5 @@ if st.sidebar.button("Run Genetic Algorithm"):
 st.markdown("---")
 st.markdown(
     "**JIE42903 – Evolutionary Computing**  \n"
-    "Genetic Algorithm based University Exam Scheduling"
+    "Multi-Objective Genetic Algorithm for University Exam Scheduling"
 )
