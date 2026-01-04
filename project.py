@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 @st.cache_data
 def load_data():
     rooms = pd.read_csv("classrooms.csv")
-    exams = pd.read_csv("exam_timeslot_dataset.csv")
+    exams = pd.read_csv("exam_timeslot.csv")
     return rooms, exams
 
 rooms_df, exams_df = load_data()
