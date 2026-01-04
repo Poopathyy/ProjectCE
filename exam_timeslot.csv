@@ -1,0 +1,21 @@
+exam_id,course_code,num_students,exam_type,exam_day,exam_time
+1,COURSE101,42,Theory,Day 1,9:00-11:00
+2,COURSE102,28,Practical,Day 1,2:00-4:00
+3,COURSE103,35,Theory,Day 2,9:00-11:00
+4,COURSE104,24,Theory,Day 2,2:00-4:00
+5,COURSE105,40,Practical,Day 3,9:00-11:00
+6,COURSE106,31,Theory,Day 3,2:00-4:00
+7,COURSE107,26,Theory,Day 1,9:00-11:00
+8,COURSE108,45,Practical,Day 2,2:00-4:00
+9,COURSE109,29,Theory,Day 3,9:00-11:00
+10,COURSE110,33,Theory,Day 1,2:00-4:00
+11,COURSE111,38,Practical,Day 2,9:00-11:00
+12,COURSE112,22,Theory,Day 3,2:00-4:00
+13,COURSE113,41,Practical,Day 1,9:00-11:00
+14,COURSE114,27,Theory,Day 2,2:00-4:00
+15,COURSE115,36,Theory,Day 3,9:00-11:00
+16,COURSE116,25,Practical,Day 1,2:00-4:00
+17,COURSE117,44,Theory,Day 2,9:00-11:00
+18,COURSE118,30,Practical,Day 3,2:00-4:00
+19,COURSE119,34,Theory,Day 1,9:00-11:00
+20,COURSE120,39,Practical,Day 2,2:00-4:00
