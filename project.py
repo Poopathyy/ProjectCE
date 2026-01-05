@@ -125,6 +125,11 @@ if st.button("🚀 Run Optimization"):
         pop_size, generations, mutation_rate
     )
 
+     # ---- Best Fitness Score ----
+    best_fitness_score = fitness(best)
+    st.subheader("🏆 Best Fitness Score")
+    st.metric("Best Fitness Achieved", f"{best_fitness_score:.6f}")
+
     # -------- Convergence Curve --------
     st.subheader("📈 Convergence Curve")
     plt.figure()
