@@ -3,12 +3,17 @@ import random
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-import plotly.express as px
 from collections import defaultdict
 import time
+import sys
+import io
 
-from deap import base, creator, tools, algorithms
+try:
+    from deap import base, creator, tools, algorithms
+    DEAP_AVAILABLE = True
+except ImportError:
+    DEAP_AVAILABLE = False
+    st.error("⚠️ DEAP library is not installed. Please install it using: `pip install deap`")
 
 # =====================================
 # Streamlit Page Config
@@ -22,40 +27,29 @@ st.set_page_config(
 st.title("🎓 University Exam Scheduling using Evolutionary Algorithms")
 st.markdown("**JIE42903 - Evolutionary Computing Project**")
 
+# Check if DEAP is installed
+if not DEAP_AVAILABLE:
+    st.stop()
+
 # =====================================
 # Load CSV Files
 # =====================================
 @st.cache_data
 def load_data():
     try:
-        exam_df = pd.read_csv("exam_timeslot.csv")
         room_df = pd.read_csv("classrooms.csv")
         
-        # If exam_timeslot.csv doesn't exist, create sample data
-        if exam_df.empty:
+        # Try to load exam data, create sample if not found
+        try:
+            exam_df = pd.read_csv("exam_timeslot.csv")
+        except FileNotFoundError:
             exam_df = generate_sample_exam_data()
+            st.info("📝 Using generated sample exam data. To use your own data, create 'exam_timeslot.csv'")
         
         return exam_df, room_df
     except FileNotFoundError:
-        st.error("Required CSV files not found. Using sample data.")
-        return generate_sample_data()
-
-def generate_sample_data():
-    """Generate sample data if CSV files are missing"""
-    # Sample classrooms (from your provided data)
-    room_df = pd.DataFrame({
-        'classroom_id': [1, 2, 3, 4, 5],
-        'building_name': ['A', 'K', 'B', 'A', 'I'],
-        'room_number': [305, 144, 710, 541, 747],
-        'capacity': [35, 24, 46, 30, 35],
-        'room_type': ['Lecture Hall', 'Classroom', 'Classroom', 'Classroom', 'Lecture Hall']
-    })
-    room_df['room_name'] = room_df['building_name'] + '-' + room_df['room_number'].astype(str)
-    
-    # Generate sample exam data
-    exam_df = generate_sample_exam_data()
-    
-    return exam_df, room_df
+        st.error("❌ 'classrooms.csv' not found. Please ensure it's in the same directory.")
+        return None, None
 
 def generate_sample_exam_data(num_students=200, num_courses=15):
     """Generate sample exam registration data"""
@@ -64,22 +58,23 @@ def generate_sample_exam_data(num_students=200, num_courses=15):
     
     data = []
     for course in courses:
-        # Each course has 15-45 students
         num_course_students = random.randint(15, 45)
         course_students = random.sample(students, min(num_course_students, len(students)))
         
         for student in course_students:
-            # Students typically have 3-6 exams
             if random.random() < 0.3:  # 30% chance to take this course
                 data.append({
                     'student_id': student,
                     'course_code': course,
-                    'timeslot': random.choice([1, 2, 3, 4, 5])  # For initial preference
+                    'timeslot': random.choice([1, 2, 3, 4, 5])
                 })
     
     return pd.DataFrame(data)
 
 exam_df, room_df = load_data()
+
+if exam_df is None or room_df is None:
+    st.stop()
 
 # =====================================
 # Sidebar: Data Overview & Parameters
@@ -94,7 +89,6 @@ with tab1:
     st.metric("Number of Students", exam_df["student_id"].nunique())
     st.metric("Available Rooms", room_df.shape[0])
     
-    # Show room capacity distribution
     room_cap_stats = room_df['capacity'].describe()
     st.write("**Room Capacity Stats:**")
     st.write(f"Min: {int(room_cap_stats['min'])}")
@@ -118,6 +112,10 @@ with tab2:
 # =====================================
 # Preprocessing
 # =====================================
+# Add room_name if not exists
+if 'room_name' not in room_df.columns:
+    room_df['room_name'] = room_df['building_name'] + '-' + room_df['room_number'].astype(str)
+
 EXAMS = sorted(exam_df["course_code"].unique())
 TIMESLOTS = list(range(1, 11))  # 10 time slots
 ROOMS = room_df["room_name"].tolist()
@@ -135,8 +133,8 @@ for _, row in exam_df.iterrows():
 # =====================================
 # Clear existing creators to avoid duplication errors
 for attr in ['FitnessMin', 'Individual', 'FitnessMulti', 'IndividualMulti']:
-    if attr in creator.__dict__:
-        del creator.__dict__[attr]
+    if hasattr(creator, attr):
+        delattr(creator, attr)
 
 # Single objective (minimization)
 creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
@@ -178,7 +176,6 @@ def single_objective_fitness(individual):
     for ts in TIMESLOTS:
         exams_in_ts = [e for e, (t, _) in schedule.items() if t == ts]
         if len(exams_in_ts) > 1:
-            # Get all students taking exams in this timeslot
             students_in_ts = exam_df[exam_df["course_code"].isin(exams_in_ts)]
             clash_penalty += students_in_ts.duplicated(subset=['student_id']).sum()
     
@@ -270,7 +267,6 @@ def run_nsga2():
     with st.spinner("Running NSGA-II..."):
         start_time = time.time()
         
-        # Use multi-objective creators
         pop = toolbox.population_multi(n=POP_SIZE)
         
         # Evaluate initial population
@@ -295,45 +291,30 @@ def run_nsga2():
         return pop, execution_time
 
 # =====================================
-# Visualization Functions
+# Visualization Functions (Matplotlib only)
 # =====================================
 def plot_convergence(log):
-    """Plot convergence curve using Plotly"""
+    """Plot convergence curve using Matplotlib"""
     gens = log.select("gen")
     min_fit = log.select("min")
     avg_fit = log.select("avg")
     max_fit = log.select("max")
     
-    fig = go.Figure()
+    fig, ax = plt.subplots(figsize=(10, 6))
     
-    fig.add_trace(go.Scatter(
-        x=gens, y=min_fit,
-        mode='lines+markers',
-        name='Best Fitness',
-        line=dict(color='green', width=3)
-    ))
+    ax.plot(gens, min_fit, 'g-', linewidth=3, label='Best Fitness', marker='o', markersize=4)
+    ax.plot(gens, avg_fit, 'b--', linewidth=2, label='Average Fitness')
+    ax.plot(gens, max_fit, 'r:', linewidth=1, label='Worst Fitness')
     
-    fig.add_trace(go.Scatter(
-        x=gens, y=avg_fit,
-        mode='lines',
-        name='Average Fitness',
-        line=dict(color='blue', width=2, dash='dash')
-    ))
+    ax.set_xlabel("Generation", fontsize=12)
+    ax.set_ylabel("Fitness (Penalty Score)", fontsize=12)
+    ax.set_title("GA Convergence Curve", fontsize=14, fontweight='bold')
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
     
-    fig.add_trace(go.Scatter(
-        x=gens, y=max_fit,
-        mode='lines',
-        name='Worst Fitness',
-        line=dict(color='red', width=1, dash='dot')
-    ))
-    
-    fig.update_layout(
-        title="GA Convergence Curve",
-        xaxis_title="Generation",
-        yaxis_title="Fitness (Penalty Score)",
-        template="plotly_white",
-        hovermode="x unified"
-    )
+    # Set background color
+    fig.patch.set_facecolor('#f0f2f6')
+    ax.set_facecolor('white')
     
     return fig
 
@@ -347,30 +328,28 @@ def plot_pareto_front(pareto_pop):
     pf_f1 = [ind.fitness.values[0] for ind in pareto_front]
     pf_f2 = [ind.fitness.values[1] for ind in pareto_front]
     
-    fig = go.Figure()
+    fig, ax = plt.subplots(figsize=(10, 6))
     
-    fig.add_trace(go.Scatter(
-        x=f1, y=f2,
-        mode='markers',
-        name='All Solutions',
-        marker=dict(color='lightblue', size=8, opacity=0.6)
-    ))
+    # Plot all solutions
+    ax.scatter(f1, f2, c='lightblue', s=50, alpha=0.6, edgecolors='black', linewidth=0.5, label='All Solutions')
     
-    fig.add_trace(go.Scatter(
-        x=pf_f1, y=pf_f2,
-        mode='markers+lines',
-        name='Pareto Front',
-        marker=dict(color='red', size=12),
-        line=dict(color='red', width=2)
-    ))
+    # Plot Pareto front
+    # Sort for better line visualization
+    pf_sorted = sorted(zip(pf_f1, pf_f2), key=lambda x: x[0])
+    if pf_sorted:
+        pf_x, pf_y = zip(*pf_sorted)
+        ax.plot(pf_x, pf_y, 'r-', linewidth=2, label='Pareto Front')
+        ax.scatter(pf_x, pf_y, c='red', s=100, edgecolors='black', linewidth=1, zorder=5)
     
-    fig.update_layout(
-        title="NSGA-II Pareto Front",
-        xaxis_title="Student Clashes",
-        yaxis_title="Capacity Violations",
-        template="plotly_white",
-        hovermode="closest"
-    )
+    ax.set_xlabel("Student Clashes", fontsize=12)
+    ax.set_ylabel("Capacity Violations", fontsize=12)
+    ax.set_title("NSGA-II Pareto Front", fontsize=14, fontweight='bold')
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+    
+    # Set background color
+    fig.patch.set_facecolor('#f0f2f6')
+    ax.set_facecolor('white')
     
     return fig, pareto_front
 
@@ -387,20 +366,49 @@ def visualize_schedule(best_individual):
             row.append(len(exams_in_slot))
         schedule_matrix.append(row)
     
-    fig = px.imshow(
-        schedule_matrix,
-        labels=dict(x="Rooms", y="Time Slots", color="Exams"),
-        x=ROOMS[:10],
-        y=[f"Slot {ts}" for ts in TIMESLOTS],
-        color_continuous_scale="Viridis",
-        aspect="auto"
-    )
+    fig, ax = plt.subplots(figsize=(12, 8))
     
-    fig.update_layout(
-        title="Exam Schedule Heatmap",
-        xaxis_title="Rooms",
-        yaxis_title="Time Slots"
-    )
+    # Create heatmap
+    cmap = plt.cm.viridis
+    im = ax.imshow(schedule_matrix, cmap=cmap, aspect='auto')
+    
+    # Add colorbar
+    cbar = ax.figure.colorbar(im, ax=ax)
+    cbar.ax.set_ylabel('Number of Exams', rotation=-90, va="bottom")
+    
+    # Set labels
+    ax.set_xlabel('Rooms', fontsize=12)
+    ax.set_ylabel('Time Slots', fontsize=12)
+    ax.set_title('Exam Schedule Heatmap', fontsize=14, fontweight='bold')
+    
+    # Set ticks
+    ax.set_xticks(np.arange(len(ROOMS[:10])))
+    ax.set_yticks(np.arange(len(TIMESLOTS)))
+    ax.set_xticklabels(ROOMS[:10], rotation=45, ha='right')
+    ax.set_yticklabels([f'Slot {ts}' for ts in TIMESLOTS])
+    
+    # Add text annotations
+    for i in range(len(TIMESLOTS)):
+        for j in range(len(ROOMS[:10])):
+            if schedule_matrix[i][j] > 0:
+                ax.text(j, i, schedule_matrix[i][j], 
+                       ha="center", va="center", color="white", fontweight='bold')
+    
+    fig.tight_layout()
+    return fig
+
+def plot_room_capacity_distribution():
+    """Plot room capacity distribution"""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    ax.hist(room_df['capacity'], bins=10, color='#1E88E5', edgecolor='black', alpha=0.7)
+    ax.set_xlabel('Room Capacity', fontsize=12)
+    ax.set_ylabel('Frequency', fontsize=12)
+    ax.set_title('Room Capacity Distribution', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    
+    fig.patch.set_facecolor('#f0f2f6')
+    ax.set_facecolor('white')
     
     return fig
 
@@ -426,10 +434,8 @@ with tab1:
     # Data statistics
     st.subheader("📊 Data Statistics")
     
-    fig1 = px.histogram(room_df, x='capacity', title='Room Capacity Distribution',
-                       nbins=10, color_discrete_sequence=['#1E88E5'])
-    fig1.update_layout(bargap=0.1)
-    st.plotly_chart(fig1, use_container_width=True)
+    fig_cap = plot_room_capacity_distribution()
+    st.pyplot(fig_cap)
 
 with tab2:
     st.subheader("🎯 Single-Objective Genetic Algorithm")
@@ -448,11 +454,14 @@ with tab2:
             st.metric("Generations", NGEN)
         
         # Convergence plot
-        st.plotly_chart(plot_convergence(log), use_container_width=True)
+        st.subheader("📉 Convergence Curve")
+        conv_fig = plot_convergence(log)
+        st.pyplot(conv_fig)
         
         # Schedule visualization
         st.subheader("📅 Best Schedule Visualization")
-        st.plotly_chart(visualize_schedule(best_individual), use_container_width=True)
+        schedule_fig = visualize_schedule(best_individual)
+        st.pyplot(schedule_fig)
         
         # Detailed schedule table
         st.subheader("📋 Detailed Schedule")
@@ -464,11 +473,21 @@ with tab2:
                 'Students': exam_students.get(exam, 0),
                 'Time Slot': ts,
                 'Room': room,
-                'Room Capacity': room_capacity.get(room, 0)
+                'Room Capacity': room_capacity.get(room, 0),
+                'Capacity OK': '✅' if exam_students.get(exam, 0) <= room_capacity.get(room, 999) else '❌'
             })
         
         schedule_df = pd.DataFrame(schedule_data)
         st.dataframe(schedule_df, use_container_width=True)
+        
+        # Export schedule option
+        csv = schedule_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Schedule as CSV",
+            data=csv,
+            file_name="optimized_schedule.csv",
+            mime="text/csv",
+        )
 
 with tab3:
     st.subheader("📊 Multi-Objective Optimization with NSGA-II")
@@ -484,30 +503,50 @@ with tab3:
         
         # Pareto front visualization
         pareto_fig, pareto_front = plot_pareto_front(pareto_pop)
-        st.plotly_chart(pareto_fig, use_container_width=True)
+        st.pyplot(pareto_fig)
         
         # Show selected solutions from Pareto front
         st.subheader("🎯 Selected Pareto Solutions")
         
         if len(pareto_front) > 0:
-            # Let user select which solution to view
-            selected_idx = st.selectbox(
+            # Create a selection interface
+            options = [f"Solution {i+1}: Clashes={pareto_front[i].fitness.values[0]}, Violations={pareto_front[i].fitness.values[1]}" 
+                      for i in range(len(pareto_front))]
+            
+            selected_option = st.selectbox(
                 "Select a solution from Pareto front:",
-                range(len(pareto_front)),
-                format_func=lambda i: f"Solution {i+1}: Clashes={pareto_front[i].fitness.values[0]}, Violations={pareto_front[i].fitness.values[1]}"
+                options=options,
+                index=0
             )
             
-            if selected_idx is not None:
-                selected_solution = pareto_front[selected_idx]
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Student Clashes", selected_solution.fitness.values[0])
-                with col2:
-                    st.metric("Capacity Violations", selected_solution.fitness.values[1])
-                
-                # Visualize this schedule
-                st.plotly_chart(visualize_schedule(selected_solution), use_container_width=True)
+            selected_idx = options.index(selected_option)
+            selected_solution = pareto_front[selected_idx]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Student Clashes", selected_solution.fitness.values[0])
+            with col2:
+                st.metric("Capacity Violations", selected_solution.fitness.values[1])
+            
+            # Visualize this schedule
+            st.subheader("📅 Selected Schedule Visualization")
+            selected_schedule_fig = visualize_schedule(selected_solution)
+            st.pyplot(selected_schedule_fig)
+
+# =====================================
+# Requirements Section
+# =====================================
+with st.sidebar:
+    st.markdown("---")
+    st.subheader("📦 Installation")
+    
+    if st.button("Show Requirements"):
+        st.code("""
+pip install streamlit pandas numpy matplotlib deap
+""", language="bash")
+    
+    st.markdown("---")
+    st.caption("JIE42903 Evolutionary Computing")
 
 # =====================================
 # Footer
@@ -517,6 +556,6 @@ st.markdown(
     """
     **JIE42903 Evolutionary Computing Project**  
     *University Exam Scheduling using Genetic Algorithms*  
-    Developed with ❤️ using Streamlit, DEAP, and Plotly
+    Developed with ❤️ using Streamlit, DEAP, and Matplotlib
     """
 )
