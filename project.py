@@ -3,9 +3,9 @@ import pandas as pd
 import random
 import matplotlib.pyplot as plt
 
-# =========================
-# Load datasets
-# =========================
+# ==================================================
+# Load Datasets
+# ==================================================
 exams = pd.read_csv("exam_timeslot.csv")
 rooms = pd.read_csv("classrooms.csv")
 
@@ -16,9 +16,9 @@ NUM_EXAMS = len(exams)
 NUM_ROOMS = len(rooms)
 NUM_TIMESLOTS = len(TIMESLOTS)
 
-# =========================
-# GA Helper Functions
-# =========================
+# ==================================================
+# Genetic Algorithm Functions
+# ==================================================
 def create_individual():
     return [
         (random.randint(0, NUM_TIMESLOTS - 1),
@@ -29,6 +29,7 @@ def create_individual():
 def create_population(size):
     return [create_individual() for _ in range(size)]
 
+# ---------------- Fitness Components ----------------
 def fitness_components(individual):
     capacity_violation = 0
     room_conflict = 0
@@ -56,11 +57,20 @@ def fitness_components(individual):
 
     return capacity_violation, room_conflict, room_type_penalty, unused_capacity
 
+# ---------------- Single Objective Fitness ----------------
 def fitness(individual):
     cap, conflict, type_pen, unused = fitness_components(individual)
     penalty = (1000 * cap) + (1000 * conflict) + (10 * type_pen) + unused
     return 1 / (1 + penalty)
 
+# ---------------- Multi-Objective Fitness ----------------
+def multi_objective_fitness(individual):
+    cap, conflict, type_pen, unused = fitness_components(individual)
+    return cap + conflict, type_pen + unused
+
+# ==================================================
+# GA Operators
+# ==================================================
 def tournament_selection(population, k=3):
     selected = random.sample(population, k)
     return max(selected, key=fitness)
@@ -95,48 +105,95 @@ def genetic_algorithm(pop_size, generations, mutation_rate):
         best = max(population, key=fitness)
         best_fitness_history.append(fitness(best))
 
-    return best, best_fitness_history
+    return best, best_fitness_history, population
 
-# =========================
+# ==================================================
+# Pareto Front Functions
+# ==================================================
+def dominates(a, b):
+    return (a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1])
+
+def pareto_front(population):
+    fitnesses = [multi_objective_fitness(ind) for ind in population]
+    pareto = []
+
+    for i, f_i in enumerate(fitnesses):
+        dominated = False
+        for j, f_j in enumerate(fitnesses):
+            if dominates(f_j, f_i):
+                dominated = True
+                break
+        if not dominated:
+            pareto.append((population[i], f_i))
+
+    return pareto
+
+# ==================================================
 # Streamlit UI
-# =========================
+# ==================================================
 st.title("📘 University Exam Scheduling using Genetic Algorithm")
 
+st.markdown("""
+This application applies **Genetic Algorithm (GA)** to solve the **University Exam Scheduling problem**.
+It evaluates feasibility and quality while visualizing **multi-objective trade-offs using a Pareto front**.
+""")
+
+# ---------------- Sidebar ----------------
 st.sidebar.header("GA Parameters")
 population_size = st.sidebar.slider("Population Size", 20, 200, 50)
-generations = st.sidebar.slider("Number of Generations", 50, 300, 100)
+generations = st.sidebar.slider("Generations", 50, 300, 100)
 mutation_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1)
 
+# ---------------- Run GA ----------------
 if st.button("🚀 Run Genetic Algorithm"):
-    best_solution, history = genetic_algorithm(
+    best_solution, history, final_population = genetic_algorithm(
         population_size,
         generations,
         mutation_rate
     )
 
-    st.subheader("📈 Fitness Convergence Curve")
+    # ---------- Convergence ----------
+    st.subheader("📈 Fitness Convergence")
     plt.figure()
     plt.plot(history)
     plt.xlabel("Generation")
     plt.ylabel("Best Fitness")
     st.pyplot(plt)
 
-    st.subheader("📋 Optimized Exam Schedule")
+    # ---------- Pareto Front ----------
+    st.subheader("⚖️ Pareto Front (Multi-Objective Optimization)")
+    pareto = pareto_front(final_population)
 
+    x = [p[1][0] for p in pareto]
+    y = [p[1][1] for p in pareto]
+
+    plt.figure()
+    plt.scatter(x, y)
+    plt.xlabel("Hard Constraint Violations")
+    plt.ylabel("Quality Penalty")
+    plt.title("Pareto Front of Exam Scheduling Solutions")
+    st.pyplot(plt)
+
+    st.write(f"Number of Pareto-optimal solutions: **{len(pareto)}**")
+
+    # ---------- Best Schedule ----------
+    st.subheader("📋 Best Exam Schedule")
     schedule = []
+
     for i, (slot, room) in enumerate(best_solution):
         schedule.append({
             "Exam ID": exams.iloc[i]["exam_id"],
             "Course": exams.iloc[i]["course_code"],
             "Timeslot": TIMESLOTS[slot],
             "Room": rooms.iloc[room]["room_number"],
-            "Room Capacity": rooms.iloc[room]["capacity"],
+            "Capacity": rooms.iloc[room]["capacity"],
             "Students": exams.iloc[i]["num_students"]
         })
 
     st.dataframe(pd.DataFrame(schedule))
 
-    st.subheader("⚠️ Constraint Summary")
+    # ---------- Constraint Summary ----------
+    st.subheader("⚠️ Constraint Evaluation")
     cap, conflict, type_pen, unused = fitness_components(best_solution)
 
     st.write(f"Room Capacity Violations: **{cap}**")
