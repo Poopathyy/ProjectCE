@@ -148,18 +148,21 @@ if st.button("🚀 Run Optimization"):
     st.pyplot(plt)
 
     # -------- Best Solution Details --------
-    st.subheader("📋 Best Exam Schedule")
+    st.subheader("📋 Best Exam Timetable (with Venue)")
+
     schedule = []
+    
     for i, (slot, room) in enumerate(best):
         schedule.append({
             "Exam ID": exams.iloc[i]["exam_id"],
             "Course": exams.iloc[i]["course_code"],
-            "Timeslot": TIMESLOTS[slot],
-            "Room": rooms.iloc[room]["room_number"],
-            "Capacity": rooms.iloc[room]["capacity"],
+            "Day & Time": TIMESLOTS[slot],
+            "Venue": f"{rooms.iloc[room]['building_name']} - Room {rooms.iloc[room]['room_number']}",
+            "Room Type": rooms.iloc[room]["room_type"],
+            "Room Capacity": rooms.iloc[room]["capacity"],
             "Students": exams.iloc[i]["num_students"]
         })
-
+    
     st.dataframe(pd.DataFrame(schedule))
 
     # -------- Constraint Summary --------
