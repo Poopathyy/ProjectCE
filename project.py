@@ -162,18 +162,12 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("### 📝 Exam Dataset")
-    st.write(f"Number of Exams: {exams.shape[0]}")
-    st.write(f"Number of Attributes: {exams.shape[1]}")
-    st.write("Columns:")
-    st.write(list(exams.columns))
+    st.write(f"Total Exams: {exams.shape[0]}")
     st.dataframe(exams.head(), use_container_width=True)
 
 with col2:
     st.markdown("### 🏫 Classroom Dataset")
-    st.write(f"Number of Rooms: {rooms.shape[0]}")
-    st.write(f"Number of Attributes: {rooms.shape[1]}")
-    st.write("Columns:")
-    st.write(list(rooms.columns))
+    st.write(f"Total Classrooms: {rooms.shape[0]}")
     st.dataframe(rooms.head(), use_container_width=True)
 
 # ==============================
