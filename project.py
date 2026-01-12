@@ -5,8 +5,8 @@ from ga_scheduler import run_ga
 
 st.title("University Exam Scheduling using Genetic Algorithm")
 
-exams = pd.read_csv("data/exam_timeslot.csv")
-rooms = pd.read_csv("data/classrooms.csv")
+exams = pd.read_csv("exam_timeslot.csv")
+rooms = pd.read_csv("classrooms.csv")
 
 timeslots = exams['timeslot'].unique().tolist()
 
@@ -32,4 +32,4 @@ if st.button("Run Genetic Algorithm"):
     st.subheader("Optimized Exam Timetable")
     st.dataframe(df)
 
-    df.to_csv("results/sample_timetable.csv", index=False)
+    df.to_csv("sample_timetable.csv", index=False)
