@@ -167,11 +167,23 @@ optimization_mode = st.sidebar.radio(
     ["Single Objective", "Multi Objective"]
 )
 
-st.sidebar.markdown("### Multi-Objective Weights")
+if optimization_mode == "Multi Objective":
+    st.sidebar.markdown("### Multi-Objective Weights")
 
-w_clash = st.sidebar.slider("Clash Penalty Weight", 1000, 10000, 3000, 500)
-w_capacity = st.sidebar.slider("Capacity Penalty Weight", 1000, 10000, 3000, 500)
-w_wastage = st.sidebar.slider("Room Wastage Weight", 1, 50, 10, 1)
+    w_clash = st.sidebar.slider(
+        "Clash Penalty Weight", 1000, 10000, 3000, 500
+    )
+
+    w_capacity = st.sidebar.slider(
+        "Capacity Penalty Weight", 1000, 10000, 3000, 500
+    )
+
+    w_wastage = st.sidebar.slider(
+        "Room Wastage Weight", 1, 50, 10, 1
+    )
+else:
+    # Default values (not used in single objective)
+    w_clash = w_capacity = w_wastage = None
 
 # ==============================
 # Run Button
