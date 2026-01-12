@@ -154,6 +154,42 @@ st.write(
 )
 
 # ==============================
+# Datasets overview
+# ==============================
+st.subheader("📂 Dataset Overview")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("### 📝 Exam Dataset")
+    st.write(f"Number of Exams: {exams.shape[0]}")
+    st.write(f"Number of Attributes: {exams.shape[1]}")
+    st.write("Columns:")
+    st.write(list(exams.columns))
+    st.dataframe(exams.head(), use_container_width=True)
+
+with col2:
+    st.markdown("### 🏫 Classroom Dataset")
+    st.write(f"Number of Rooms: {rooms.shape[0]}")
+    st.write(f"Number of Attributes: {rooms.shape[1]}")
+    st.write("Columns:")
+    st.write(list(rooms.columns))
+    st.dataframe(rooms.head(), use_container_width=True)
+
+    st.subheader("📊 Dataset Summary Statistics")
+    
+    total_students = sum(num_students_map.values())
+    avg_room_capacity = round(rooms['capacity'].mean(), 2)
+    max_room_capacity = rooms['capacity'].max()
+    
+    col1, col2, col3 = st.columns(3)
+    
+    col1.metric("Total Students", total_students)
+    col2.metric("Average Room Capacity", avg_room_capacity)
+    col3.metric("Max Room Capacity", max_room_capacity)
+    
+
+# ==============================
 # Sidebar Controls
 # ==============================
 st.sidebar.header("GA Parameters")
