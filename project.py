@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from src.ga_scheduler import run_ga
+from ga_scheduler import run_ga
 
 st.title("University Exam Scheduling using Genetic Algorithm")
 
