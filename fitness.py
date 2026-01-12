@@ -1,22 +1,28 @@
-def fitness_function(chromosome, exams, rooms):
-    penalty = 0
+def fitness_function(chromosome, rooms):
+    hard_penalty = 0
+    soft_penalty = 0
 
-    room_capacity = dict(zip(rooms['room_id'], rooms['capacity']))
-    exam_students = dict(zip(exams['exam_id'], exams['num_students']))
-
+    room_capacity = dict(zip(rooms["room_id"], rooms["capacity"]))
     schedule = {}
 
-    for exam, timeslot, room in chromosome:
-        key = (timeslot, room)
+    for gene in chromosome:
+        key = (gene["timeslot"], gene["room"])
 
-        # Room capacity constraint
-        if exam_students[exam] > room_capacity[room]:
-            penalty += 1000
+        # HARD: room capacity
+        if gene["students"] > room_capacity[gene["room"]]:
+            hard_penalty += 1
 
-        # Time-slot conflict
+        # HARD: same room, same timeslot
         if key in schedule:
-            penalty += 1000
+            hard_penalty += 1
         else:
-            schedule[key] = exam
+            schedule[key] = gene["exam"]
 
-    return 1 / (1 + penalty)
+        # SOFT: room underutilization
+        unused = room_capacity[gene["room"]] - gene["students"]
+        soft_penalty += unused / room_capacity[gene["room"]]
+
+    # MULTI-OBJECTIVE (weighted)
+    fitness = 1 / (1 + 1000 * hard_penalty + 10 * soft_penalty)
+    return fitness
+
