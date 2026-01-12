@@ -18,9 +18,9 @@ exams, rooms = load_data()
 # Prepare Variables
 # ==============================
 exam_ids = exams['exam_id'].tolist()
-timeslots = exams['timeslot'].unique().tolist()
-room_ids = rooms['room_id'].tolist()
-room_capacity = dict(zip(rooms['room_id'], rooms['capacity']))
+timeslots = exams['exam-time'].unique().tolist()
+room_ids = rooms['room_number'].tolist()
+room_capacity = dict(zip(rooms['room_number'], rooms['capacity']))
 
 STUDENTS_PER_EXAM = 30  # assumption (state this in report)
 
