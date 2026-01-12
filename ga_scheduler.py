@@ -1,6 +1,6 @@
 import random
-from src.fitness import fitness_function
-from src.utils import random_assignment
+from fitness import fitness_function
+from utils import random_assignment
 
 def selection(population, fitnesses):
     return random.choices(population, weights=fitnesses, k=2)
