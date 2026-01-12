@@ -15,21 +15,33 @@ def load_data():
 exams, rooms = load_data()
 
 # ==============================
-# Prepare Variables
+# Normalize Column Names (SAFE)
+# ==============================
+exams.columns = exams.columns.str.lower()
+rooms.columns = rooms.columns.str.lower()
+
+# ==============================
+# Prepare Exam Data
 # ==============================
 exam_ids = exams['exam_id'].tolist()
 timeslots = exams['exam_time'].unique().tolist()
+
+course_code_map = dict(zip(exams['exam_id'], exams.get('course_code', exams['exam_id'])))
+exam_day_map = dict(zip(exams['exam_id'], exams.get('exam_day', exams['timeslot'])))
+num_students_map = dict(zip(exams['exam_id'], exams.get('num_students', [30]*len(exams))))
+
+# ==============================
+# Prepare Room Data
+# ==============================
 room_ids = rooms['room_number'].tolist()
 room_capacity = dict(zip(rooms['room_number'], rooms['capacity']))
-
-STUDENTS_PER_EXAM = 30  # assumption (state this in report)
+building_map = dict(zip(rooms['room_number'], rooms.get('building_name', rooms['room_id'])))
 
 # ==============================
 # Genetic Algorithm Functions
 # ==============================
 
 def create_chromosome():
-    """Create one timetable"""
     return {
         exam: (random.choice(timeslots), random.choice(room_ids))
         for exam in exam_ids
@@ -37,7 +49,6 @@ def create_chromosome():
 
 
 def fitness(chromosome):
-    """Penalty-based fitness function"""
     penalty = 0
     room_usage = {}
 
@@ -45,30 +56,28 @@ def fitness(chromosome):
         room_usage.setdefault((ts, room), []).append(exam)
 
     for (ts, room), exams_in_room in room_usage.items():
-        # Hard constraint: multiple exams in same room
+        # Hard constraint: one exam per room per timeslot
         if len(exams_in_room) > 1:
             penalty += 1000 * (len(exams_in_room) - 1)
 
         # Hard constraint: room capacity
-        students = len(exams_in_room) * STUDENTS_PER_EXAM
+        students = sum(num_students_map[e] for e in exams_in_room)
         if students > room_capacity[room]:
             penalty += 1000
 
-        # Soft constraint: room underutilization
+        # Soft constraint: underutilization
         penalty += max(room_capacity[room] - students, 0) * 0.1
 
     return penalty
 
 
 def selection(population):
-    """Tournament selection"""
     tournament = random.sample(population, 3)
     tournament.sort(key=fitness)
     return tournament[0]
 
 
 def crossover(parent1, parent2):
-    """Uniform crossover"""
     return {
         exam: parent1[exam] if random.random() < 0.5 else parent2[exam]
         for exam in exam_ids
@@ -76,7 +85,6 @@ def crossover(parent1, parent2):
 
 
 def mutation(chromosome, rate):
-    """Random mutation"""
     for exam in exam_ids:
         if random.random() < rate:
             chromosome[exam] = (
@@ -87,7 +95,6 @@ def mutation(chromosome, rate):
 
 
 def genetic_algorithm(pop_size, generations, mutation_rate):
-    """Main GA loop"""
     population = [create_chromosome() for _ in range(pop_size)]
     best_fitness_history = []
 
@@ -111,13 +118,12 @@ def genetic_algorithm(pop_size, generations, mutation_rate):
 # ==============================
 # Streamlit UI
 # ==============================
-
 st.set_page_config(page_title="Exam Scheduling GA", layout="wide")
 
 st.title("🎓 University Exam Scheduling using Genetic Algorithm")
 st.write(
-    "This application optimizes university exam timetables using a "
-    "Genetic Algorithm while satisfying room capacity and scheduling constraints."
+    "This application optimizes university exam timetables while considering "
+    "course information, student numbers, room capacity, and building allocation."
 )
 
 # ==============================
@@ -125,17 +131,9 @@ st.write(
 # ==============================
 st.sidebar.header("GA Parameters")
 
-population_size = st.sidebar.slider(
-    "Population Size", min_value=20, max_value=200, value=50, step=10
-)
-
-generations = st.sidebar.slider(
-    "Number of Generations", min_value=50, max_value=500, value=100, step=50
-)
-
-mutation_rate = st.sidebar.slider(
-    "Mutation Rate", min_value=0.01, max_value=0.5, value=0.1, step=0.01
-)
+population_size = st.sidebar.slider("Population Size", 20, 200, 50, 10)
+generations = st.sidebar.slider("Generations", 50, 500, 100, 50)
+mutation_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1, 0.01)
 
 # ==============================
 # Run Button
@@ -163,13 +161,22 @@ if st.button("🚀 Run Genetic Algorithm"):
     st.pyplot(fig)
 
     # ==============================
-    # Display Timetable
+    # Optimized Exam Timetable (FULL DETAILS)
     # ==============================
     st.subheader("🗓️ Optimized Exam Timetable")
 
     timetable = pd.DataFrame(
         [
-            {"Exam ID": exam, "Time Slot": ts, "Room": room}
+            {
+                "Course Code": course_code_map[exam],
+                "Exam ID": exam,
+                "Exam Day": exam_day_map[exam],
+                "Time Slot": ts,
+                "Room": room,
+                "Building": building_map[room],
+                "No. of Students": num_students_map[exam],
+                "Room Capacity": room_capacity[room]
+            }
             for exam, (ts, room) in best_solution.items()
         ]
     )
@@ -185,4 +192,3 @@ st.markdown(
     "**Case Study:** University Exam Scheduling  \n"
     "**Method:** Genetic Algorithm"
 )
-
