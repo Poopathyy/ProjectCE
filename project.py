@@ -70,6 +70,28 @@ def fitness(chromosome):
 
     return penalty
 
+def fitness_multi(chromosome, w1, w2, w3):
+    penalty = 0
+    room_usage = {}
+
+    for exam, (ts, room) in chromosome.items():
+        room_usage.setdefault((ts, room), []).append(exam)
+
+    for (ts, room), exams_in_room in room_usage.items():
+        # Objective 1: exam clashes
+        if len(exams_in_room) > 1:
+            penalty += w1 * (len(exams_in_room) - 1)
+
+        # Objective 2: room capacity
+        students = sum(num_students_map[e] for e in exams_in_room)
+        if students > room_capacity[room]:
+            penalty += w2
+
+        # Objective 3: room wastage
+        penalty += w3 * max(room_capacity[room] - students, 0)
+
+    return penalty
+
 
 def selection(population):
     tournament = random.sample(population, 3)
@@ -94,7 +116,8 @@ def mutation(chromosome, rate):
     return chromosome
 
 
-def genetic_algorithm(pop_size, generations, mutation_rate):
+def genetic_algorithm(pop_size, generations, mutation_rate,
+                      mode, w1, w2, w3):
     population = [create_chromosome() for _ in range(pop_size)]
     best_fitness_history = []
 
@@ -109,11 +132,15 @@ def genetic_algorithm(pop_size, generations, mutation_rate):
             new_population.append(child)
 
         population = new_population
-        best = min(population, key=fitness)
-        best_fitness_history.append(fitness(best))
+
+        if mode == "Multi Objective":
+            best = min(population, key=lambda x: fitness_multi(x, w1, w2, w3))
+            best_fitness_history.append(fitness_multi(best, w1, w2, w3))
+        else:
+            best = min(population, key=fitness)
+            best_fitness_history.append(fitness(best))
 
     return best, best_fitness_history
-
 
 # ==============================
 # Streamlit UI
@@ -135,6 +162,17 @@ population_size = st.sidebar.slider("Population Size", 20, 200, 50, 10)
 generations = st.sidebar.slider("Generations", 50, 500, 100, 50)
 mutation_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1, 0.01)
 
+optimization_mode = st.sidebar.radio(
+    "Optimization Mode",
+    ["Single Objective", "Multi Objective"]
+)
+
+st.sidebar.markdown("### Multi-Objective Weights")
+
+w_clash = st.sidebar.slider("Clash Penalty Weight", 1000, 10000, 3000, 500)
+w_capacity = st.sidebar.slider("Capacity Penalty Weight", 1000, 10000, 3000, 500)
+w_wastage = st.sidebar.slider("Room Wastage Weight", 1, 50, 10, 1)
+
 # ==============================
 # Run Button
 # ==============================
@@ -143,15 +181,26 @@ if st.button("🚀 Run Genetic Algorithm"):
         best_solution, fitness_history = genetic_algorithm(
             population_size,
             generations,
-            mutation_rate
+            mutation_rate,
+            optimization_mode,
+            w_clash,
+            w_capacity,
+            w_wastage
         )
 
-    st.success(f"✅ Best Fitness Score: {fitness(best_solution)}")
+    if optimization_mode == "Multi Objective":
+        best_score = fitness_multi(
+            best_solution, w_clash, w_capacity, w_wastage
+        )
+    else:
+        best_score = fitness(best_solution)
+
+    st.success(f"✅ Best Fitness Score: {round(best_score, 2)}")
 
     # ==============================
     # Convergence Plot
     # ==============================
-    st.subheader("📈 GA Convergence Curve")
+    ax.set_title(f"GA Convergence Curve ({optimization_mode})")
 
     fig, ax = plt.subplots()
     ax.plot(fitness_history)
