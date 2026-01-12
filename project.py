@@ -200,14 +200,16 @@ if st.button("🚀 Run Genetic Algorithm"):
     # ==============================
     # Convergence Plot
     # ==============================
-    ax.set_title(f"GA Convergence Curve ({optimization_mode})")
+    st.subheader("📈 GA Convergence Curve")
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots()          # ✅ CREATE ax FIRST
     ax.plot(fitness_history)
     ax.set_xlabel("Generation")
     ax.set_ylabel("Fitness")
-    ax.set_title("Fitness vs Generation")
+    ax.set_title(f"GA Convergence Curve ({optimization_mode})")
+    
     st.pyplot(fig)
+
 
     # ==============================
     # Optimized Exam Timetable (FULL DETAILS)
