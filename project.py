@@ -35,7 +35,7 @@ num_students_map = dict(zip(exams['exam_id'], exams.get('num_students', [30]*len
 # ==============================
 room_ids = rooms['room_number'].tolist()
 room_capacity = dict(zip(rooms['room_number'], rooms['capacity']))
-building_map = dict(zip(rooms['room_number'], rooms.get('building_name', rooms['room_id'])))
+building_map = dict(zip(rooms['room_number'], rooms.get('building_name', rooms['room_number'])))
 
 # ==============================
 # Genetic Algorithm Functions
