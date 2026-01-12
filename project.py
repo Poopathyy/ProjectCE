@@ -18,7 +18,7 @@ exams, rooms = load_data()
 # Prepare Variables
 # ==============================
 exam_ids = exams['exam_id'].tolist()
-timeslots = exams['exam-time'].unique().tolist()
+timeslots = exams['exam_time'].unique().tolist()
 room_ids = rooms['room_number'].tolist()
 room_capacity = dict(zip(rooms['room_number'], rooms['capacity']))
 
