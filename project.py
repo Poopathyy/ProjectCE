@@ -158,29 +158,23 @@ st.write(
 # ==============================
 st.subheader("📂 Dataset Overview")
 
-# ---- Exam Dataset Summary ----
-total_exams = len(exam_ids)
-total_students = sum(num_students_map.values())
-total_timeslots = len(timeslots)
-
-# ---- Classroom Dataset Summary ----
-total_rooms = len(room_ids)
-avg_capacity = round(rooms['capacity'].mean(), 2)
-max_capacity = rooms['capacity'].max()
-
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("### 📝 Exam Dataset Summary")
-    st.metric("Total Exams", total_exams)
-    st.metric("Total Students", total_students)
-    st.metric("Available Time Slots", total_timeslots)
+    st.markdown("### 🏫 Classrooms Dataset")
+    st.dataframe(
+        rooms.head(10),
+        use_container_width=True,
+        height=350
+    )
 
 with col2:
-    st.markdown("### 🏫 Classroom Dataset Summary")
-    st.metric("Total Classrooms", total_rooms)
-    st.metric("Average Room Capacity", avg_capacity)
-    st.metric("Maximum Room Capacity", max_capacity)
+    st.markdown("### 📝 Exam Timeslot Dataset")
+    st.dataframe(
+        exams.head(10),
+        use_container_width=True,
+        height=350
+    )
 
 # ==============================
 # Sidebar Controls
