@@ -8,28 +8,21 @@ st.title("University Exam Scheduling using Genetic Algorithm")
 exams = pd.read_csv("exam_timeslot.csv")
 rooms = pd.read_csv("classrooms.csv")
 
-timeslots = exams['timeslot'].unique().tolist()
+st.write("Exam Dataset Columns:", exams.columns.tolist())
+st.write("Room Dataset Columns:", rooms.columns.tolist())
 
 generations = st.slider("Generations", 50, 500, 200)
 population = st.slider("Population Size", 20, 100, 50)
 
-if st.button("Run Genetic Algorithm"):
-    best_solution, history = run_ga(
-        exams, rooms, timeslots,
-        generations, population
-    )
+if st.button("Run GA"):
+    best, history = run_ga(exams, rooms, generations, population)
 
-    st.subheader("GA Convergence")
+    st.subheader("Fitness Convergence")
     plt.plot(history)
     plt.xlabel("Generation")
     plt.ylabel("Best Fitness")
     st.pyplot(plt)
 
-    df = pd.DataFrame(
-        best_solution,
-        columns=["Exam", "Time Slot", "Room"]
-    )
-    st.subheader("Optimized Exam Timetable")
-    st.dataframe(df)
-
-    df.to_csv("sample_timetable.csv", index=False)
+    timetable = pd.DataFrame(best)
+    st.subheader("Optimized Timetable")
+    st.dataframe(timetable)
