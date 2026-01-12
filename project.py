@@ -27,7 +27,7 @@ exam_ids = exams['exam_id'].tolist()
 timeslots = exams['exam_time'].unique().tolist()
 
 course_code_map = dict(zip(exams['exam_id'], exams.get('course_code', exams['exam_id'])))
-exam_day_map = dict(zip(exams['exam_id'], exams.get('exam_day', exams['timeslot'])))
+exam_day_map = dict(zip(exams['exam_id'], exams.get('exam_day', exams['exam_time'])))
 num_students_map = dict(zip(exams['exam_id'], exams.get('num_students', [30]*len(exams))))
 
 # ==============================
