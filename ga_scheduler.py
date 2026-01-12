@@ -1,6 +1,6 @@
 import random
-from src.utils import random_assignment, generate_timeslots
-from src.fitness import fitness_function
+from utils import random_assignment, generate_timeslots
+from fitness import fitness_function
 
 def selection(population, fitnesses):
     return random.choices(population, weights=fitnesses, k=2)
