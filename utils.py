@@ -2,8 +2,8 @@ import pandas as pd
 import random
 
 def load_data():
-    exams = pd.read_csv("data/exam_timeslot.csv")
-    rooms = pd.read_csv("data/classrooms.csv")
+    exams = pd.read_csv("exam_timeslot.csv")
+    rooms = pd.read_csv("classrooms.csv")
     return exams, rooms
 
 def random_assignment(exams, rooms, timeslots):
