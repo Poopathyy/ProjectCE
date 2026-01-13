@@ -115,6 +115,29 @@ def mutation(chromosome, rate):
             )
     return chromosome
 
+def evaluate_final_metrics(chromosome):
+    capacity_violations = 0
+    wasted_capacity = 0
+
+    room_usage = {}
+
+    for exam, (ts, room) in chromosome.items():
+        room_usage.setdefault((ts, room), []).append(exam)
+
+    for (ts, room), exams_in_room in room_usage.items():
+        students = sum(num_students_map[e] for e in exams_in_room)
+        capacity = room_capacity[room]
+
+        # Capacity violation (hard constraint)
+        if students > capacity:
+            capacity_violations += 1
+
+        # Wasted capacity (soft constraint)
+        wasted_capacity += max(capacity - students, 0)
+
+    return capacity_violations, wasted_capacity
+
+
 
 def genetic_algorithm(pop_size, generations, mutation_rate,
                       mode, w1, w2, w3):
@@ -229,8 +252,29 @@ if st.button("🚀 Run Genetic Algorithm"):
         )
     else:
         best_score = fitness(best_solution)
+        capacity_violations, wasted_capacity = evaluate_final_metrics(best_solution)
 
     st.success(f"✅ Best Fitness Score: {round(best_score, 2)}")
+    
+    st.subheader("📌 Final Optimization Results")
+
+    col1, col2, col3 = st.columns(3)
+    
+    col1.metric(
+        "Final Cost",
+        round(best_score, 2)
+    )
+    
+    col2.metric(
+        "Capacity Violations",
+        capacity_violations
+    )
+    
+    col3.metric(
+        "Wasted Capacity",
+        wasted_capacity
+    )
+
 
     # ==============================
     # Convergence Plot
