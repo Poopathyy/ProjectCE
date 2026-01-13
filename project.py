@@ -99,12 +99,16 @@ def selection(population):
     return tournament[0]
 
 
-def crossover(parent1, parent2):
+def crossover(parent1, parent2, crossover_rate):
+    # No crossover → copy parent1
+    if random.random() > crossover_rate:
+        return parent1.copy()
+
+    # Uniform crossover
     return {
         exam: parent1[exam] if random.random() < 0.5 else parent2[exam]
         for exam in exam_ids
     }
-
 
 def mutation(chromosome, rate):
     for exam in exam_ids:
@@ -140,7 +144,7 @@ def evaluate_final_metrics(chromosome):
 
 
 def genetic_algorithm(pop_size, generations, mutation_rate,
-                      mode, w1, w2, w3):
+                      crossover_rate, mode, w1, w2, w3):
     population = [create_chromosome() for _ in range(pop_size)]
     best_fitness_history = []
 
@@ -150,7 +154,7 @@ def genetic_algorithm(pop_size, generations, mutation_rate,
         for _ in range(pop_size):
             p1 = selection(population)
             p2 = selection(population)
-            child = crossover(p1, p2)
+            child = crossover(p1, p2, crossover_rate)
             child = mutation(child, mutation_rate)
             new_population.append(child)
 
@@ -207,6 +211,7 @@ st.sidebar.header("GA Parameters")
 population_size = st.sidebar.slider("Population Size", 20, 200, 50, 10)
 generations = st.sidebar.slider("Generations", 50, 500, 100, 50)
 mutation_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1, 0.01)
+crossover_rate = st.sidebar.slider("Crossover Rate", 0.1, 1.0, 0.8, 0.05)
 
 optimization_mode = st.sidebar.radio(
     "Optimization Mode",
@@ -236,15 +241,16 @@ else:
 # ==============================
 if st.button("🚀 Run Genetic Algorithm"):
     with st.spinner("Optimizing exam timetable..."):
-        best_solution, fitness_history = genetic_algorithm(
-            population_size,
-            generations,
-            mutation_rate,
-            optimization_mode,
-            w_clash,
-            w_capacity,
-            w_wastage
-        )
+       best_solution, fitness_history = genetic_algorithm(
+        population_size,
+        generations,
+        mutation_rate,
+        crossover_rate,
+        optimization_mode,
+        w_clash,
+        w_capacity,
+        w_wastage
+    )
 
     # ---- Best score ----
     if optimization_mode == "Multi Objective":
