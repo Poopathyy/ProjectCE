@@ -260,20 +260,9 @@ if st.button("🚀 Run Genetic Algorithm"):
 
     col1, col2, col3 = st.columns(3)
     
-    col1.metric(
-        "Final Cost",
-        round(best_score, 2)
-    )
-    
-    col2.metric(
-        "Capacity Violations",
-        capacity_violations
-    )
-    
-    col3.metric(
-        "Wasted Capacity",
-        wasted_capacity
-    )
+    col1.metric("Final Cost", round(best_score, 2))
+    col2.metric("Capacity Violations", capacity_violations)
+    col3.metric("Wasted Capacity", wasted_capacity)
 
 
     # ==============================
