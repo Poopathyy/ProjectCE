@@ -92,13 +92,9 @@ def fitness_multi(chromosome, w1, w2, w3):
 
     return penalty
 
-
-def selection(population, mode, w1, w2, w3):
+def selection(population):
     tournament = random.sample(population, 3)
-    if mode == "Multi Objective":
-        tournament.sort(key=lambda x: fitness_multi(x, w1, w2, w3))
-    else:
-        tournament.sort(key=fitness)
+    tournament.sort(key=fitness)
     return tournament[0]
 
 def crossover(parent1, parent2, crossover_rate):
