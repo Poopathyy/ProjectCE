@@ -246,42 +246,36 @@ if st.button("🚀 Run Genetic Algorithm"):
             w_wastage
         )
 
+    # ---- Best score ----
     if optimization_mode == "Multi Objective":
         best_score = fitness_multi(
             best_solution, w_clash, w_capacity, w_wastage
         )
     else:
         best_score = fitness(best_solution)
-        capacity_violations, wasted_capacity = evaluate_final_metrics(best_solution)
 
-    st.success(f"✅ Best Fitness Score: {round(best_score, 2)}")
-    
+    # ---- FINAL METRICS (DEFINE FIRST) ----
+    capacity_violations, wasted_capacity = evaluate_final_metrics(best_solution)
+
+    # ---- DISPLAY METRICS ----
     st.subheader("📌 Final Optimization Results")
 
     col1, col2, col3 = st.columns(3)
-    
     col1.metric("Final Cost", round(best_score, 2))
     col2.metric("Capacity Violations", capacity_violations)
     col3.metric("Wasted Capacity", wasted_capacity)
 
-
-    # ==============================
-    # Convergence Plot
-    # ==============================
+    # ---- CONVERGENCE PLOT ----
     st.subheader("📈 GA Convergence Curve")
 
-    fig, ax = plt.subplots()          # ✅ CREATE ax FIRST
+    fig, ax = plt.subplots()
     ax.plot(fitness_history)
     ax.set_xlabel("Generation")
     ax.set_ylabel("Fitness")
     ax.set_title(f"GA Convergence Curve ({optimization_mode})")
-    
     st.pyplot(fig)
 
-
-    # ==============================
-    # Optimized Exam Timetable (FULL DETAILS)
-    # ==============================
+    # ---- TIMETABLE ----
     st.subheader("🗓️ Optimized Exam Timetable")
 
     timetable = pd.DataFrame(
