@@ -31,14 +31,11 @@ room_capacity = dict(zip(rooms["room_number"], rooms["capacity"]))
 room_type = dict(zip(rooms["room_number"], rooms["room_type"]))
 
 # ==============================
-# Chromosome
+# GA Core
 # ==============================
 def create_chromosome():
     return {e: (random.choice(timeslots), random.choice(room_ids)) for e in exam_ids}
 
-# ==============================
-# SINGLE-OBJECTIVE FITNESS
-# ==============================
 def fitness(solution):
     penalty = 0
     schedule = {}
@@ -49,7 +46,6 @@ def fitness(solution):
     for (ts, r), exams_here in schedule.items():
         students = sum(num_students[e] for e in exams_here)
 
-        # Hard constraints
         if len(exams_here) > 1:
             penalty += 1000 * (len(exams_here) - 1)
 
@@ -62,18 +58,12 @@ def fitness(solution):
             if exam_type[e].lower() == "theory" and "lab" in room_type[r].lower():
                 penalty += 300
 
-        # Soft constraint
         penalty += max(room_capacity[r] - students, 0) * 0.1
 
     return penalty
 
-# ==============================
-# MULTI-OBJECTIVE FITNESS
-# ==============================
 def multi_objective_fitness(solution):
-    capacity_v = 0
-    type_v = 0
-    waste = 0
+    cap_v, type_v, waste = 0, 0, 0
     schedule = {}
 
     for e, (ts, r) in solution.items():
@@ -83,7 +73,7 @@ def multi_objective_fitness(solution):
         students = sum(num_students[e] for e in exams_here)
 
         if students > room_capacity[r]:
-            capacity_v += 1
+            cap_v += 1
 
         for e in exams_here:
             if exam_type[e].lower() == "practical" and "lab" not in room_type[r].lower():
@@ -93,11 +83,8 @@ def multi_objective_fitness(solution):
 
         waste += max(room_capacity[r] - students, 0)
 
-    return capacity_v, type_v, waste
+    return cap_v, type_v, waste
 
-# ==============================
-# GA OPERATORS
-# ==============================
 def selection(pop):
     return min(random.sample(pop, 3), key=fitness)
 
@@ -112,42 +99,30 @@ def mutation(chromo, rate):
             chromo[e] = (random.choice(timeslots), random.choice(room_ids))
     return chromo
 
-# ==============================
-# SINGLE-OBJECTIVE GA
-# ==============================
 def genetic_algorithm(pop_size, gens, m_rate, c_rate):
     pop = [create_chromosome() for _ in range(pop_size)]
     history = []
 
     for _ in range(gens):
-        new_pop = []
-        for _ in range(pop_size):
-            p1 = selection(pop)
-            p2 = selection(pop)
-            child = mutation(crossover(p1, p2, c_rate), m_rate)
-            new_pop.append(child)
-        pop = new_pop
-        best = min(pop, key=fitness)
-        history.append(fitness(best))
+        pop = [
+            mutation(
+                crossover(selection(pop), selection(pop), c_rate),
+                m_rate
+            ) for _ in range(pop_size)
+        ]
+        history.append(fitness(min(pop, key=fitness)))
 
     return min(pop, key=fitness), history
 
-# ==============================
-# PARETO FUNCTIONS
-# ==============================
 def dominates(a, b):
     return all(x <= y for x, y in zip(a, b)) and any(x < y for x, y in zip(a, b))
 
 def pareto_front(pop):
-    front = []
-    for p in pop:
-        if not any(dominates(multi_objective_fitness(q), multi_objective_fitness(p)) for q in pop):
-            front.append(p)
-    return front
+    return [p for p in pop if not any(
+        dominates(multi_objective_fitness(q), multi_objective_fitness(p))
+        for q in pop
+    )]
 
-# ==============================
-# MULTI-OBJECTIVE GA
-# ==============================
 def genetic_algorithm_multi(pop_size, gens, m_rate, c_rate):
     pop = [create_chromosome() for _ in range(pop_size)]
     pareto_sizes = []
@@ -155,17 +130,20 @@ def genetic_algorithm_multi(pop_size, gens, m_rate, c_rate):
     for _ in range(gens):
         front = pareto_front(pop)
         pareto_sizes.append(len(front))
-        pop = [mutation(crossover(random.choice(front), random.choice(front), c_rate), m_rate)
-               for _ in range(pop_size)]
+        pop = [
+            mutation(
+                crossover(random.choice(front), random.choice(front), c_rate),
+                m_rate
+            ) for _ in range(pop_size)
+        ]
 
     return pareto_front(pop)[0], pareto_sizes
 
 # ==============================
-# METRICS
+# Metrics
 # ==============================
 def compute_metrics(solution, runtime):
-    capacity_v = 0
-    wasted = 0
+    cap_v, wasted = 0, 0
     schedule = {}
 
     for e, (ts, r) in solution.items():
@@ -174,13 +152,13 @@ def compute_metrics(solution, runtime):
     for (ts, r), exams_here in schedule.items():
         students = sum(num_students[e] for e in exams_here)
         if students > room_capacity[r]:
-            capacity_v += 1
+            cap_v += 1
         wasted += max(room_capacity[r] - students, 0)
 
     raw = fitness(solution)
     final_cost = round(raw / 1000, 1)
 
-    return final_cost, capacity_v, wasted, raw, runtime
+    return final_cost, cap_v, wasted, runtime
 
 # ==============================
 # STREAMLIT UI
@@ -188,71 +166,78 @@ def compute_metrics(solution, runtime):
 st.set_page_config("Exam Scheduling GA", layout="wide")
 st.title("🎓 University Exam Scheduling using Genetic Algorithm")
 
-st.sidebar.header("Optimization Mode")
-mode = st.sidebar.radio("Select Mode", ["Single Objective", "Multi Objective"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📘 Overview", "⚙ Configuration", "📊 Results", "🗓 Timetable"
+])
 
-st.sidebar.header("GA Parameters")
-pop_size = st.sidebar.slider("Population Size", 20, 200, 50)
-gens = st.sidebar.slider("Generations", 50, 500, 100)
-m_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1)
-c_rate = st.sidebar.slider("Crossover Rate", 0.1, 1.0, 0.8)
+with tab1:
+    st.markdown("""
+### Optimization Goal
+Minimize overall exam scheduling cost while satisfying hard constraints.
 
-if st.button("🚀 Run Genetic Algorithm"):
+**Hard Constraints**
+- Room capacity
+- Room–timeslot conflict
+- Room-type compatibility
+
+**Soft Objective**
+- Minimize wasted room capacity
+""")
+
+with tab2:
+    st.subheader("Optimization Mode")
+    mode = st.radio("Select Optimization Type",
+                    ["Single Objective", "Multi Objective"])
+
+    st.subheader("GA Parameters")
+    pop_size = st.slider("Population Size", 20, 200, 50)
+    gens = st.slider("Generations", 50, 500, 100)
+    m_rate = st.slider("Mutation Rate", 0.01, 0.5, 0.1)
+    c_rate = st.slider("Crossover Rate", 0.1, 1.0, 0.8)
+
+    run = st.button("🚀 Run Genetic Algorithm")
+
+if run:
     start = time.time()
 
     if mode == "Single Objective":
         best, history = genetic_algorithm(pop_size, gens, m_rate, c_rate)
     else:
-        best, pareto_sizes = genetic_algorithm_multi(pop_size, gens, m_rate, c_rate)
-        history = pareto_sizes
+        best, history = genetic_algorithm_multi(pop_size, gens, m_rate, c_rate)
 
     runtime = time.time() - start
+    final_cost, cap_v, wasted, runtime = compute_metrics(best, runtime)
 
-    final_cost, cap_v, wasted, raw, runtime = compute_metrics(best, runtime)
+    with tab3:
+        st.subheader("Performance Metrics")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Final Cost", final_cost)
+        c2.metric("Capacity Violations", cap_v)
+        c3.metric("Wasted Capacity", wasted)
+        c4.metric("Computation Time (s)", round(runtime, 2))
 
-    # ==============================
-    # METRICS
-    # ==============================
-    st.subheader("📊 Performance Metrics")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Final Cost", final_cost)
-    c2.metric("Capacity Violations", cap_v)
-    c3.metric("Wasted Capacity", wasted)
-    c4.metric("Computation Time (s)", round(runtime, 2))
-
-    # ==============================
-    # CONVERGENCE / PARETO PLOT
-    # ==============================
-    st.subheader("📈 Optimization Progress")
-    fig, ax = plt.subplots()
-
-    if mode == "Single Objective":
+        st.subheader("Optimization Progress")
+        fig, ax = plt.subplots()
         ax.plot(history)
-        ax.set_ylabel("Fitness")
-    else:
-        ax.plot(history)
-        ax.set_ylabel("Pareto Front Size")
+        ax.set_xlabel("Generation")
+        ax.set_ylabel("Fitness" if mode == "Single Objective" else "Pareto Front Size")
+        st.pyplot(fig)
 
-    ax.set_xlabel("Generation")
-    st.pyplot(fig)
-
-    # ==============================
-    # TIMETABLE
-    # ==============================
-    st.subheader("🗓 Optimized Exam Timetable")
-    df = pd.DataFrame([
-        {
-            "Exam ID": e,
-            "Exam Type": exam_type[e],
-            "Timeslot": ts,
-            "Room": r,
-            "Room Type": room_type[r],
-            "Students": num_students[e],
-            "Capacity": room_capacity[r]
-        }
-        for e, (ts, r) in best.items()
-    ])
-    st.dataframe(df, use_container_width=True)
+    with tab4:
+        st.subheader("Optimized Exam Timetable")
+        df = pd.DataFrame([
+            {
+                "Exam ID": e,
+                "Type": exam_type[e],
+                "Timeslot": ts,
+                "Room": r,
+                "Room Type": room_type[r],
+                "Students": num_students[e],
+                "Capacity": room_capacity[r]
+            }
+            for e, (ts, r) in best.items()
+        ])
+        st.dataframe(df, use_container_width=True)
 
 st.markdown("---")
 st.markdown("**Course:** JIE42903 – Evolutionary Computing  \n**Method:** Genetic Algorithm")
