@@ -161,10 +161,12 @@ if st.button("🚀 Run Genetic Algorithm"):
     capacity_violations, wasted_capacity = evaluate_final_metrics(best_solution)
 
     st.subheader("📌 Final Optimization Results")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Final Cost (Normalized)", normalize_cost(raw_cost))
-    col2.metric("Capacity Violations", capacity_violations)
-    col3.metric("Wasted Capacity", wasted_capacity)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Raw Fitness", round(raw_cost, 2))
+    col2.metric("Final Cost (Normalized)", normalize_cost(raw_cost))
+    col3.metric("Capacity Violations", capacity_violations)
+    col4.metric("Wasted Capacity", wasted_capacity)
+
 
     st.subheader("📈 GA Convergence Curve")
     fig, ax = plt.subplots()
