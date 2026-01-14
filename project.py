@@ -127,7 +127,7 @@ def compute_metrics(solution, runtime):
     raw_fitness = fitness(solution)
 
     # Convert raw fitness to ONE digit
-    final_cost = round(raw_fitness / (raw_fitness + 1), 1)
+    final_cost = round(raw_fitness / 1000, 1)
 
     return final_cost, capacity_violations, wasted_capacity, raw_fitness, runtime
 
