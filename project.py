@@ -1,11 +1,13 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import random
+import time
 import matplotlib.pyplot as plt
 
-# ==============================
+# =========================
 # Load Data
-# ==============================
+# =========================
 @st.cache_data
 def load_data():
     exams = pd.read_csv("exam_timeslot.csv")
@@ -14,211 +16,171 @@ def load_data():
 
 exams, rooms = load_data()
 
-# ==============================
-# Normalize Column Names
-# ==============================
 exams.columns = exams.columns.str.lower()
 rooms.columns = rooms.columns.str.lower()
 
-# ==============================
-# Prepare Exam Data
-# ==============================
-exam_ids = exams['exam_id'].tolist()
-timeslots = exams['exam_time'].unique().tolist()
+num_timeslots = exams["exam_time"].nunique()
 
-course_code_map = dict(zip(exams['exam_id'], exams['course_code']))
-exam_day_map = dict(zip(exams['exam_id'], exams['exam_day']))
-num_students_map = dict(zip(exams['exam_id'], exams['num_students']))
-exam_type_map = dict(zip(exams['exam_id'], exams['exam_type']))
+# =========================
+# Repair Function
+# =========================
+def repair_solution(timeslot, room, exam_idx, schedule_map):
+    students = exams.iloc[exam_idx]["num_students"]
+    exam_type = exams.iloc[exam_idx]["exam_type"].lower()
 
-# ==============================
-# Prepare Room Data
-# ==============================
-room_ids = rooms['room_number'].tolist()
-room_capacity = dict(zip(rooms['room_number'], rooms['capacity']))
-building_map = dict(zip(rooms['room_number'], rooms['building_name']))
-room_type_map = dict(zip(rooms['room_number'], rooms['room_type']))
+    # Capacity repair
+    feasible_rooms = rooms[rooms["capacity"] >= students].index.tolist()
+    if room not in feasible_rooms and feasible_rooms:
+        room = random.choice(feasible_rooms)
 
-# ==============================
-# Genetic Algorithm Functions
-# ==============================
-def create_chromosome():
-    return {
-        exam: (random.choice(timeslots), random.choice(room_ids))
-        for exam in exam_ids
-    }
+    room_type = rooms.iloc[room]["room_type"].lower()
 
-def fitness(chromosome):
+    # Room-type repair
+    if exam_type == "practical" and "lab" not in room_type:
+        labs = rooms[rooms["room_type"].str.contains("lab", case=False)].index.tolist()
+        if labs:
+            room = random.choice(labs)
+
+    if exam_type == "theory" and "lab" in room_type:
+        non_labs = rooms[~rooms["room_type"].str.contains("lab", case=False)].index.tolist()
+        if non_labs:
+            room = random.choice(non_labs)
+
+    # Room-timeslot conflict
+    if (timeslot, room) in schedule_map:
+        free_rooms = [
+            r for r in rooms.index if (timeslot, r) not in schedule_map
+        ]
+        if free_rooms:
+            room = random.choice(free_rooms)
+        else:
+            timeslot = (timeslot + 1) % num_timeslots
+
+    return timeslot, room
+
+# =========================
+# Fitness Function (RAW)
+# =========================
+def fitness_ga(solution):
     penalty = 0
-    room_usage = {}
+    room_usage = np.zeros(len(rooms))
+    schedule_map = set()
 
-    for exam, (ts, room) in chromosome.items():
-        room_usage.setdefault((ts, room), []).append(exam)
+    for i in range(len(exams)):
+        timeslot = int(np.clip(round(solution[2*i]), 0, num_timeslots - 1))
+        room = int(np.clip(round(solution[2*i + 1]), 0, len(rooms) - 1))
 
-    for (ts, room), exams_in_room in room_usage.items():
+        students = exams.iloc[i]["num_students"]
+        exam_type = exams.iloc[i]["exam_type"].lower()
+        room_type = rooms.iloc[room]["room_type"].lower()
+        capacity = rooms.iloc[room]["capacity"]
 
-        # Room–timeslot conflict (hard)
-        if len(exams_in_room) > 1:
-            penalty += 5 * (len(exams_in_room) - 1)
+        if (
+            students > capacity or
+            (exam_type == "practical" and "lab" not in room_type) or
+            (exam_type == "theory" and "lab" in room_type) or
+            (timeslot, room) in schedule_map
+        ):
+            timeslot, room = repair_solution(timeslot, room, i, schedule_map)
 
-        students = sum(num_students_map[e] for e in exams_in_room)
+        if students > capacity:
+            penalty += 1
+        if exam_type == "practical" and "lab" not in room_type:
+            penalty += 0.5
+        if exam_type == "theory" and "lab" in room_type:
+            penalty += 0.5
+        if (timeslot, room) in schedule_map:
+            penalty += 1
 
-        # Capacity violation (hard)
-        if students > room_capacity[room]:
-            penalty += 5
+        schedule_map.add((timeslot, room))
+        room_usage[room] += students
 
-        # Room-type compatibility
-        for e in exams_in_room:
-            if exam_type_map[e].lower() == "practical" and room_type_map[room].lower() != "lab":
-                penalty += 5
-            if exam_type_map[e].lower() == "theory" and room_type_map[room].lower() == "lab":
-                penalty += 2
+    utilization_penalty = np.var(room_usage / np.sum(room_usage)) if np.sum(room_usage) > 0 else 0
 
-        # Wasted capacity (soft)
-        penalty += (room_capacity[room] - students) * 0.01
+    return penalty + utilization_penalty
 
-    return round(penalty, 2)
+# =========================
+# GA Runner
+# =========================
+def run_ga(pop_size, generations, crossover_rate, mutation_rate):
+    start = time.time()
 
-def selection(population):
-    return min(random.sample(population, 3), key=fitness)
+    dimensions = len(exams) * 2
+    population = np.random.rand(pop_size, dimensions)
 
-def crossover(p1, p2, rate):
-    if random.random() > rate:
-        return p1.copy()
-    return {
-        e: p1[e] if random.random() < 0.5 else p2[e]
-        for e in exam_ids
-    }
+    for p in range(pop_size):
+        for i in range(len(exams)):
+            population[p][2*i] *= num_timeslots
+            population[p][2*i+1] *= len(rooms)
 
-def mutation(chromosome, rate):
-    for e in exam_ids:
-        if random.random() < rate:
-            chromosome[e] = (random.choice(timeslots), random.choice(room_ids))
-    return chromosome
+    fitness_vals = np.array([fitness_ga(ind) for ind in population])
+    convergence = []
 
-def evaluate_metrics(chromosome):
-    capacity_violations = 0
-    wasted_capacity = 0
-    room_usage = {}
+    for _ in range(generations):
+        new_population = []
 
-    for exam, (ts, room) in chromosome.items():
-        room_usage.setdefault((ts, room), []).append(exam)
+        while len(new_population) < pop_size:
+            i1, i2 = random.sample(range(pop_size), 2)
+            p1 = population[i1] if fitness_vals[i1] < fitness_vals[i2] else population[i2]
 
-    for (ts, room), exams_in_room in room_usage.items():
-        students = sum(num_students_map[e] for e in exams_in_room)
-        if students > room_capacity[room]:
-            capacity_violations += 1
-        wasted_capacity += max(room_capacity[room] - students, 0)
+            i3, i4 = random.sample(range(pop_size), 2)
+            p2 = population[i3] if fitness_vals[i3] < fitness_vals[i4] else population[i4]
 
-    return capacity_violations, wasted_capacity
+            # Crossover
+            if random.random() < crossover_rate:
+                alpha = random.random()
+                child = alpha * p1 + (1 - alpha) * p2
+            else:
+                child = p1.copy()
 
-def genetic_algorithm(pop_size, gens, mut_rate, cross_rate):
-    population = [create_chromosome() for _ in range(pop_size)]
-    history = []
+            # Mutation
+            for d in range(dimensions):
+                if random.random() < mutation_rate:
+                    if d % 2 == 0:
+                        child[d] = random.uniform(0, num_timeslots)
+                    else:
+                        child[d] = random.uniform(0, len(rooms))
 
-    for _ in range(gens):
-        new_pop = []
-        for _ in range(pop_size):
-            p1 = selection(population)
-            p2 = selection(population)
-            child = crossover(p1, p2, cross_rate)
-            child = mutation(child, mut_rate)
-            new_pop.append(child)
-        population = new_pop
-        best = min(population, key=fitness)
-        history.append(fitness(best))
+            new_population.append(child)
 
-    return best, history
+        population = np.array(new_population)
+        fitness_vals = np.array([fitness_ga(ind) for ind in population])
+        convergence.append(np.min(fitness_vals))
 
-# ==============================
+    best_idx = np.argmin(fitness_vals)
+    runtime = time.time() - start
+
+    return population[best_idx], fitness_vals[best_idx], convergence, runtime
+
+# =========================
 # Streamlit UI
-# ==============================
-st.set_page_config("University Exam Scheduling – GA", layout="wide")
-st.title("🎓 University Exam Scheduling using Genetic Algorithm")
+# =========================
+st.set_page_config("GA Exam Scheduling", layout="wide")
+st.title("🧬 Genetic Algorithm – Exam Scheduling")
 
-st.write(
-    "This system optimizes exam scheduling by assigning exams to suitable classrooms "
-    "while satisfying hard constraints and minimizing wasted capacity."
-)
-
-# ==============================
-# Dataset Overview
-# ==============================
-st.subheader("📂 Dataset Overview")
-c1, c2 = st.columns(2)
-c1.markdown("### 🏫 Classrooms Dataset")
-c1.dataframe(rooms, use_container_width=True)
-c2.markdown("### 📝 Exam Timeslot Dataset")
-c2.dataframe(exams, use_container_width=True)
-
-# ==============================
-# Sidebar Controls
-# ==============================
 st.sidebar.header("GA Parameters")
-population_size = st.sidebar.slider("Population Size", 20, 200, 50, 10)
-generations = st.sidebar.slider("Generations", 50, 500, 100, 50)
-mutation_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1, 0.01)
+pop_size = st.sidebar.slider("Population Size", 20, 200, 60, 10)
+generations = st.sidebar.slider("Generations", 50, 500, 150, 50)
 crossover_rate = st.sidebar.slider("Crossover Rate", 0.1, 1.0, 0.8, 0.05)
+mutation_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1, 0.01)
 
-# ==============================
-# Run GA
-# ==============================
-if st.button("🚀 Run Genetic Algorithm"):
-    with st.spinner("Optimizing exam timetable..."):
-        best_solution, fitness_history = genetic_algorithm(
-            population_size,
-            generations,
-            mutation_rate,
-            crossover_rate
+if st.button("🚀 Run GA"):
+    with st.spinner("Optimizing schedule..."):
+        best_solution, raw_fitness, convergence, runtime = run_ga(
+            pop_size, generations, crossover_rate, mutation_rate
         )
 
-    final_cost = fitness(best_solution)
-    capacity_violations, wasted_capacity = evaluate_metrics(best_solution)
-
-    # ==============================
-    # Final Metrics
-    # ==============================
-    st.subheader("📌 Final Optimization Results")
+    st.subheader("📊 Final Results")
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Final Cost", final_cost)   # ✅ SINGLE DIGIT
-    col2.metric("Capacity Violations", capacity_violations)
-    col3.metric("Wasted Capacity", wasted_capacity)
+    col1.metric("Raw Fitness (Final Cost)", round(raw_fitness, 1))
+    col2.metric("Runtime (sec)", round(runtime, 2))
+    col3.metric("Generations", generations)
 
-    # ==============================
-    # Convergence Plot
-    # ==============================
     st.subheader("📈 GA Convergence Curve")
     fig, ax = plt.subplots()
-    ax.plot(fitness_history)
+    ax.plot(convergence)
     ax.set_xlabel("Generation")
     ax.set_ylabel("Fitness")
+    ax.set_title("GA Convergence")
     st.pyplot(fig)
-
-    # ==============================
-    # Timetable Output
-    # ==============================
-    st.subheader("🗓️ Optimized Exam Timetable")
-    timetable = pd.DataFrame([
-        {
-            "Course Code": course_code_map[e],
-            "Exam Day": exam_day_map[e],
-            "Time Slot": ts,
-            "Room": r,
-            "Building": building_map[r],
-            "Students": num_students_map[e],
-            "Capacity": room_capacity[r]
-        }
-        for e, (ts, r) in best_solution.items()
-    ])
-    st.dataframe(timetable, use_container_width=True)
-
-# ==============================
-# Footer
-# ==============================
-st.markdown(
-    "---\n"
-    "**Course:** JIE42903 – Evolutionary Computing  \n"
-    "**Case Study:** University Exam Scheduling  \n"
-    "**Algorithm:** Genetic Algorithm"
-)
