@@ -26,29 +26,25 @@ rooms.columns = rooms.columns.str.lower()
 exam_ids = exams['exam_id'].tolist()
 timeslots = exams['exam_time'].unique().tolist()
 
-course_code_map = dict(zip(exams['exam_id'], exams['course_code']))
-exam_day_map = dict(zip(exams['exam_id'], exams['exam_day']))
-num_students_map = dict(zip(exams['exam_id'], exams['num_students']))
-exam_type_map = dict(zip(exams['exam_id'], exams['exam_type']))
+course_code_map = dict(zip(exams['exam_id'], exams.get('course_code', exams['exam_id'])))
+exam_day_map = dict(zip(exams['exam_id'], exams.get('exam_day', exams['exam_time'])))
+num_students_map = dict(zip(exams['exam_id'], exams.get('num_students', [30]*len(exams))))
+exam_type_map = dict(zip(exams['exam_id'], exams.get('exam_type', ['theory']*len(exams))))
 
 # ==============================
 # Prepare Room Data
 # ==============================
 room_ids = rooms['room_number'].tolist()
 room_capacity = dict(zip(rooms['room_number'], rooms['capacity']))
-building_map = dict(zip(rooms['room_number'], rooms['building_name']))
-room_type_map = dict(zip(rooms['room_number'], rooms['room_type']))
+building_map = dict(zip(rooms['room_number'], rooms.get('building_name', rooms['room_number'])))
+room_type_map = dict(zip(rooms['room_number'], rooms.get('room_type', ['theory']*len(rooms))))
 
 # ==============================
 # Genetic Algorithm Functions
 # ==============================
 def create_chromosome():
-    return {
-        exam: (random.choice(timeslots), random.choice(room_ids))
-        for exam in exam_ids
-    }
+    return {exam: (random.choice(timeslots), random.choice(room_ids)) for exam in exam_ids}
 
-# -------- SINGLE OBJECTIVE FITNESS --------
 def fitness(chromosome):
     penalty = 0
     room_usage = {}
@@ -56,65 +52,30 @@ def fitness(chromosome):
     for exam, (ts, room) in chromosome.items():
         room_usage.setdefault((ts, room), []).append(exam)
 
-        exam_type = exam_type_map[exam].lower()
-        room_type = room_type_map[room].lower()
-
-        # HARD: Room-Type Compatibility
-        if exam_type == "practical" and room_type != "lab":
-            penalty += 2000
-        if exam_type == "theory" and room_type == "lab":
-            penalty += 2000
-
     for (ts, room), exams_in_room in room_usage.items():
-        # HARD: Room–Timeslot Conflict
+
+        # Room–Timeslot conflict
         if len(exams_in_room) > 1:
             penalty += 1000 * (len(exams_in_room) - 1)
 
         students = sum(num_students_map[e] for e in exams_in_room)
 
-        # HARD: Capacity
+        # Room capacity violation
         if students > room_capacity[room]:
             penalty += 1000
 
-        # SOFT: Wasted Capacity
+        # Room-type compatibility
+        for e in exams_in_room:
+            if exam_type_map[e] == "practical" and room_type_map[room] != "lab":
+                penalty += 2000
+            if exam_type_map[e] == "theory" and room_type_map[room] == "lab":
+                penalty += 500
+
+        # Wasted capacity
         penalty += max(room_capacity[room] - students, 0) * 0.1
 
     return penalty
 
-# -------- MULTI OBJECTIVE FITNESS --------
-def fitness_multi(chromosome, w1, w2, w3):
-    penalty = 0
-    room_usage = {}
-
-    for exam, (ts, room) in chromosome.items():
-        room_usage.setdefault((ts, room), []).append(exam)
-
-        exam_type = exam_type_map[exam].lower()
-        room_type = room_type_map[room].lower()
-
-        # Objective 1: Room-Type Compatibility
-        if exam_type == "practical" and room_type != "lab":
-            penalty += w1
-        if exam_type == "theory" and room_type == "lab":
-            penalty += w1
-
-    for (ts, room), exams_in_room in room_usage.items():
-        # Objective 2: Room Conflict
-        if len(exams_in_room) > 1:
-            penalty += w2 * (len(exams_in_room) - 1)
-
-        students = sum(num_students_map[e] for e in exams_in_room)
-
-        # Objective 3: Capacity
-        if students > room_capacity[room]:
-            penalty += w2
-
-        # Objective 4: Wastage
-        penalty += w3 * max(room_capacity[room] - students, 0)
-
-    return penalty
-
-# -------- GA OPERATORS --------
 def selection(population):
     tournament = random.sample(population, 3)
     tournament.sort(key=fitness)
@@ -123,37 +84,21 @@ def selection(population):
 def crossover(p1, p2, rate):
     if random.random() > rate:
         return p1.copy()
-    return {
-        exam: p1[exam] if random.random() < 0.5 else p2[exam]
-        for exam in exam_ids
-    }
+    return {e: p1[e] if random.random() < 0.5 else p2[e] for e in exam_ids}
 
 def mutation(chromosome, rate):
-    for exam in exam_ids:
+    for e in exam_ids:
         if random.random() < rate:
-            chromosome[exam] = (
-                random.choice(timeslots),
-                random.choice(room_ids)
-            )
+            chromosome[e] = (random.choice(timeslots), random.choice(room_ids))
     return chromosome
 
-# -------- FINAL METRICS --------
 def evaluate_final_metrics(chromosome):
     capacity_violations = 0
     wasted_capacity = 0
-    room_type_violations = 0
     room_usage = {}
 
     for exam, (ts, room) in chromosome.items():
         room_usage.setdefault((ts, room), []).append(exam)
-
-        exam_type = exam_type_map[exam].lower()
-        room_type = room_type_map[room].lower()
-
-        if exam_type == "practical" and room_type != "lab":
-            room_type_violations += 1
-        if exam_type == "theory" and room_type == "lab":
-            room_type_violations += 1
 
     for (ts, room), exams_in_room in room_usage.items():
         students = sum(num_students_map[e] for e in exams_in_room)
@@ -161,84 +106,69 @@ def evaluate_final_metrics(chromosome):
             capacity_violations += 1
         wasted_capacity += max(room_capacity[room] - students, 0)
 
-    return capacity_violations, wasted_capacity, room_type_violations
+    return capacity_violations, wasted_capacity
 
-# -------- MAIN GA --------
-def genetic_algorithm(pop_size, generations, mutation_rate, crossover_rate,
-                      mode, w1, w2, w3):
+def normalize_cost(cost):
+    return round(cost / 1000, 2)
 
+def genetic_algorithm(pop_size, gens, mut_rate, cross_rate):
     population = [create_chromosome() for _ in range(pop_size)]
     history = []
 
-    for _ in range(generations):
+    for _ in range(gens):
         new_pop = []
         for _ in range(pop_size):
             p1 = selection(population)
             p2 = selection(population)
-            child = crossover(p1, p2, crossover_rate)
-            child = mutation(child, mutation_rate)
+            child = crossover(p1, p2, cross_rate)
+            child = mutation(child, mut_rate)
             new_pop.append(child)
         population = new_pop
-
-        if mode == "Multi Objective":
-            best = min(population, key=lambda x: fitness_multi(x, w1, w2, w3))
-            history.append(fitness_multi(best, w1, w2, w3))
-        else:
-            best = min(population, key=fitness)
-            history.append(fitness(best))
+        best = min(population, key=fitness)
+        history.append(fitness(best))
 
     return best, history
 
 # ==============================
-# STREAMLIT UI
+# Streamlit UI
 # ==============================
-st.set_page_config(page_title="Exam Scheduling GA", layout="wide")
+st.set_page_config("Exam Scheduling GA", layout="wide")
 st.title("🎓 University Exam Scheduling using Genetic Algorithm")
 
-# Sidebar
+# Dataset Overview
+st.subheader("📂 Dataset Overview")
+c1, c2 = st.columns(2)
+c1.dataframe(rooms, use_container_width=True)
+c2.dataframe(exams, use_container_width=True)
+
+# Sidebar Controls
 st.sidebar.header("GA Parameters")
 population_size = st.sidebar.slider("Population Size", 20, 200, 50, 10)
 generations = st.sidebar.slider("Generations", 50, 500, 100, 50)
 mutation_rate = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1, 0.01)
 crossover_rate = st.sidebar.slider("Crossover Rate", 0.1, 1.0, 0.8, 0.05)
 
-optimization_mode = st.sidebar.radio(
-    "Optimization Mode",
-    ["Single Objective", "Multi Objective"]
-)
-
-if optimization_mode == "Multi Objective":
-    w_clash = st.sidebar.slider("Clash / Type Weight", 1000, 10000, 3000, 500)
-    w_capacity = st.sidebar.slider("Capacity Weight", 1000, 10000, 3000, 500)
-    w_wastage = st.sidebar.slider("Wastage Weight", 1, 50, 10, 1)
-else:
-    w_clash = w_capacity = w_wastage = None
-
-# Run
+# Run GA
 if st.button("🚀 Run Genetic Algorithm"):
-    best, history = genetic_algorithm(
-        population_size, generations,
-        mutation_rate, crossover_rate,
-        optimization_mode,
-        w_clash, w_capacity, w_wastage
+    best_solution, fitness_history = genetic_algorithm(
+        population_size,
+        generations,
+        mutation_rate,
+        crossover_rate
     )
 
-    if optimization_mode == "Multi Objective":
-        best_score = fitness_multi(best, w_clash, w_capacity, w_wastage)
-    else:
-        best_score = fitness(best)
+    raw_cost = fitness(best_solution)
+    capacity_violations, wasted_capacity = evaluate_final_metrics(best_solution)
 
-    cap_v, waste, type_v = evaluate_final_metrics(best)
+    st.subheader("📌 Final Optimization Results")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Final Cost (Normalized)", normalize_cost(raw_cost))
+    col2.metric("Capacity Violations", capacity_violations)
+    col3.metric("Wasted Capacity", wasted_capacity)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Final Cost", round(best_score, 2))
-    col2.metric("Capacity Violations", cap_v)
-    col3.metric("Wasted Capacity", waste)
-    col4.metric("Room-Type Violations", type_v)
-
+    st.subheader("📈 GA Convergence Curve")
     fig, ax = plt.subplots()
-    ax.plot(history)
-    ax.set_title("GA Convergence Curve")
+    ax.plot(fitness_history)
     ax.set_xlabel("Generation")
     ax.set_ylabel("Fitness")
     st.pyplot(fig)
@@ -250,11 +180,13 @@ if st.button("🚀 Run Genetic Algorithm"):
             "Exam Day": exam_day_map[e],
             "Time Slot": ts,
             "Room": r,
-            "Room Type": room_type_map[r],
             "Building": building_map[r],
             "Students": num_students_map[e],
             "Capacity": room_capacity[r]
         }
-        for e, (ts, r) in best.items()
+        for e, (ts, r) in best_solution.items()
     ])
     st.dataframe(timetable, use_container_width=True)
+
+# Footer
+st.markdown("---\n**Course:** JIE42903 – Evolutionary Computing  \n**Case Study:** University Exam Scheduling")
